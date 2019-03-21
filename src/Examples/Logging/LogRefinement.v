@@ -4,6 +4,7 @@ From RecoveryRefinement.Examples.Logging Require Import LogAPI LogImpl.
 From RecoveryRefinement.Examples Require Import ExMach.WeakestPre ExMach.RefinementAdequacy.
 From RecoveryRefinement Require AtomicPair.Helpers.
 From iris.base_logic.lib Require Export invariants gen_heap.
+From RecoveryRefinement Require Import NamedDestruct.
 
 Unset Implicit Arguments.
 
@@ -58,8 +59,11 @@ Section refinement_triples.
 
   Definition state_interp' (s:BufState) (txns: list (nat*nat)) :=
     (match s with
-     | Empty => ⌜txns = []⌝ ∗ txn_free txn1_start ∗ txn_free txn2_start
-     | Txn1 => ∃ txn1, ⌜txns = [txn1]⌝ ∗ txn_map txn1_start txn1 ∗ txn_free txn2_start
+     | Empty => ⌜txns = []⌝ ∗
+                         txn_free txn1_start ∗
+                         txn_free txn2_start
+     | Txn1 => ∃ txn1, ⌜txns = [txn1]⌝ ∗ txn_map txn1_start txn1 ∗
+                                    txn_free txn2_start
     | Txn2 => ∃ txn2, ⌜txns = [txn2]⌝ ∗ txn_map txn2_start txn2 ∗ txn_free txn1_start
     | Txn12 => ∃ txn1 txn2, ⌜txns = [txn1; txn2]⌝ ∗ txn_map txn1_start txn1 ∗ txn_map txn2_start txn2
     | Txn21 => ∃ txn1 txn2, ⌜txns = [txn2; txn1]⌝ ∗ txn_map txn1_start txn1 ∗ txn_map txn2_start txn2
@@ -103,8 +107,9 @@ Section refinement_triples.
 
   Definition StateLockInv names :=
     (∃ s txns,
-        state m↦ enc_state s ∗ state_interp s txns ∗
-              own (names.(γtxns)) (◯ Excl' txns))%I.
+        named "Hstateenc" (state m↦ enc_state s) ∗
+              named "Hstate_interp" (state_interp s txns) ∗
+              named "Howntxns" (own (names.(γtxns)) (◯ Excl' txns)))%I.
 
   Fixpoint log_map (i: nat) log :=
     (match log with
@@ -130,20 +135,21 @@ Section refinement_triples.
   Qed.
 
   Definition ExecDiskInv (log: list nat) (log_sh: list nat) :=
-    (⌜length log + length log_sh <= 999⌝ ∗
-             log_len d↦ length log ∗
-             log_map 0 log ∗
+    (named "Hlogbound" (⌜length log + length log_sh <= 999⌝) ∗
+             named "Hloglen" (log_len d↦ length log) ∗
+             named "Hlogmap" (log_map 0 log) ∗
              (* in between the log and the free space are shadow writes - writes
              to the free space that are important for non-crash execution but
              that we would lose track of on crash *)
-             log_map (length log) log_sh ∗
-             log_free (length log + length log_sh)
-             (999 - (length log + length log_sh)))%I.
+             named "Hmap_sh" (log_map (length log) log_sh) ∗
+             named "Hlog_free" (log_free (length log + length log_sh)
+             (999 - (length log + length log_sh))))%I.
 
   Definition DiskLockInv Γ :=
     (∃ (log log_sh: list nat),
         ⌜log_sh = []⌝ ∗
-                    own (Γ.(γlog)) (◯ Excl' log) ∗ own (Γ.(γlog_sh)) (◯ Excl' log_sh))%I.
+                    named "Hownlog" (own (Γ.(γlog)) (◯ Excl' log)) ∗
+                    named "Hownlog_sh" (own (Γ.(γlog_sh)) (◯ Excl' log_sh)))%I.
 
   Definition Abstraction txns log :=
     source_state {| Log.mem_buf := flatten_txns txns;
@@ -208,8 +214,11 @@ Section refinement_triples.
     (ExecDiskInv log log_sh -∗
                  ExecDiskInv log [])%I.
   Proof.
+    iLIntro.
+    iDestruct "Hlogbound" as %Hlogbound.
     unfold ExecDiskInv.
-    iIntros "(%&?&?&Hmap_sh&Hfree)"; iFrame.
+    unbundle_names.
+    iFrame.
     iSplitL "".
     iPureIntro; simpl; lia.
     iSplitL ""; auto.
@@ -225,23 +234,23 @@ Section refinement_triples.
   Definition iN : namespace := nroot.@"inner".
 
   Definition VolatileInv Γ (txns: list (nat*nat)) :=
-    (own (Γ.(γtxns)) (● Excl' txns))%I.
+    (named "Howntxns_auth" (own (Γ.(γtxns)) (● Excl' txns)))%I.
 
   Definition DurableInv Γ log log_sh :=
-    (own (Γ.(γlog)) (● Excl' log) ∗
-         own (Γ.(γlog_sh)) (● Excl' log_sh) ∗
-         ExecDiskInv log log_sh)%I.
+    (named "Hownlog_auth" (own (Γ.(γlog)) (● Excl' log)) ∗
+         named "Hownlog_sh_auth" (own (Γ.(γlog_sh)) (● Excl' log_sh)) ∗
+         named "Hdisk_inv" (ExecDiskInv log log_sh))%I.
 
   Definition ExecInv' Γ :=
-    (is_lock lN (Γ.(γslock)) state_lock (StateLockInv Γ) ∗
-             is_lock ldN (Γ.(γdlock)) disk_lock (DiskLockInv Γ) ∗
-             inv iN (∃ (txns: list (nat*nat)) (log log_sh: list nat),
-                        VolatileInv Γ txns ∗
-                                    DurableInv Γ log log_sh ∗
-                                    Abstraction txns log))%I.
+    (named "Hstatelock" (is_lock lN (Γ.(γslock)) state_lock (StateLockInv Γ)) ∗
+           named "Hdisklock" (is_lock ldN (Γ.(γdlock)) disk_lock (DiskLockInv Γ)) ∗
+           named "Hinv" (inv iN (∃ (txns: list (nat*nat)) (log log_sh: list nat),
+                                    named "Hvol" (VolatileInv Γ txns) ∗
+                                          named "Hdur" (DurableInv Γ log log_sh) ∗
+                                          named "Habs" (Abstraction txns log))))%I.
 
   Definition ExecInv :=
-    (source_ctx ∗ ∃ (Γ:ghost_names), ExecInv' Γ)%I.
+    (named "Hsource_inv" source_ctx ∗ ∃ (Γ:ghost_names), ExecInv' Γ)%I.
 
   Definition CrashInv :=
     (source_ctx ∗ ∃ (Γ:ghost_names), inv iN (CrashInner Γ))%I.
@@ -348,12 +357,14 @@ Section refinement_triples.
   Proof.
     iIntros (Φ) "(Hj&Href&#Hsource_inv&Hinv) HΦ".
     ExecInv "Hinv".
+    unbundle_names.
     wp_lock "(Hlocked&Hlinv)".
 
     iDestruct "Hlinv" as (log log_sh) "(->&Hownlog&Hownlog_sh)".
 
     wp_bind.
     DurInv "Hinv".
+    unfold ExecDiskInv.
 
     iDestruct "Hdisk" as "(%&Hlog_len&Hlog_data)".
     wp_step.
