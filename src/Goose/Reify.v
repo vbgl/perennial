@@ -226,17 +226,6 @@ Definition reify T (op : Op T)  : RTerm.t gs gs T.
     end.
 Qed.
 
-Ltac reflproc_step p :=
-  let t := eval simpl in (Proc.exec_step Go.sem p) in
-  refl t.
-
-Definition reify_proc_step T (p : proc T)  : RTerm.t es es (proc T * thread_pool Op).
-  destruct p eqn:?;
-  match goal with
-  | [ H : p = ?A |- _ ] => let x := reflproc_step A in idtac x; exact x
-  end.
-Qed.
-
 Ltac reflproc p :=
   let t := eval simpl in (greedy_exec Go.sem p) in
   let t' := eval cbv [greedy_exec greedy_exec_partial greedy_exec_pool exec_pool_hd exec_step] in t in
