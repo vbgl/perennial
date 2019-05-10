@@ -15,7 +15,7 @@ Section GreedyProc.
   Notation exec_step := (exec_step sem).
   Notation exec_pool_hd := (exec_pool_hd sem).
   Notation exec_pool := (exec_pool sem).
-  Fixpoint greedy_exec_pool (ps: list {T & proc T}) : relation State State thread_pool :=
+  Definition greedy_exec_pool (ps: list {T & proc T}) : relation State State thread_pool :=
     match ps with
     | nil => none
     | existT _ T p :: ps' =>

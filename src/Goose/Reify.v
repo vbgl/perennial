@@ -63,6 +63,7 @@ Module RTerm.
   | AndThenFS T1 T2 : t fs fs T1 -> (T1 -> t fs fs T2) -> t fs fs T2
   | AndThenDS T1 T2 : t ds ds T1 -> (T1 -> t ds ds T2) -> t ds ds T2
   | AndThenGB T1 T2 : t gb gb T1 -> (T1 -> t gb gb T2) -> t gb gb T2
+  | BindStarES T : (T -> t es es T) -> T -> t es es T
 
   (* zooms *)
   | CallGS T : t gs gs T -> t es es T
@@ -108,6 +109,7 @@ Fixpoint rtermDenote A B T (r: RTerm.t A B T) : relation A B T :=
   | RTerm.AndThenFS r1 f => and_then (rtermDenote r1) (fun x => (rtermDenote (f x)))
   | RTerm.AndThenDS r1 f => and_then (rtermDenote r1) (fun x => (rtermDenote (f x)))
   | RTerm.AndThenGB r1 f => and_then (rtermDenote r1) (fun x => (rtermDenote (f x)))
+  | RTerm.BindStarES rf o => bind_star (fun x => (rtermDenote (rf x))) o
 
   | RTerm.CallGS r => snd_lift (rtermDenote r)
   | RTerm.ZoomFS r => _zoom Go.fs (rtermDenote r)
@@ -166,6 +168,9 @@ Ltac refl' RetB RetT e :=
     let f1 := refl' B T1 r1 in
     let f2 := refl' C T2 (fun (p: T * T1) => (r2 (fst p) (snd p))) in
     constr: (fun x => RTerm.AndThenGB (f1 x) (fun y => f2 (x, y)))
+  | fun x: ?T => @bind_star ?A ?T1 (@?rf x) (@?o x) =>
+    let f := refl' A T1 (fun (p: T * T1) => (rf (fst p) (snd p))) in
+    constr: (fun x => RTerm.BindStarES (fun y => f (x, y)) (o x))
 
   | fun x: ?T => @snd_lift ?A1 ?A2 ?B ?T1 (@?r x) =>
     let f := refl' A2 T1 r in
