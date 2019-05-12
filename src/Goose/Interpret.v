@@ -166,11 +166,10 @@ Theorem interpret_ok : forall T (r: RTerm.t es es T) (a : es),
     end.
 Proof.
   intros.
-  pose (interpret r a).
-  destruct o eqn:?.
-  - 
-    
-    admit.
+  destruct (interpret r a) eqn:H; eauto; unfold interpret in H.
+  all: destruct (interpret_es r (a, ptrMap_null)) eqn:Hes; try discriminate; unfold interpret_es in Hes.
+  invert r.
+  - (* discriminate should work but won't *) unfold es in H1. admit.
 Admitted.
 
 (* Tests *)    
