@@ -192,7 +192,13 @@ Ltac refl' RetB RetT e :=
     constr: (fun x => RTerm.Error A B T0)
   | fun x : ?T => @?E x =>
     constr: (fun x => RTerm.NotImpl (E x))
+
+  (* | fun x : ?T => match ?v with [] => @none ?A ?B ?T1 | ?p :: ?ps => (@?listcase p ps x) end =>
+    let l := refl' B T1 listcase in
+    constr: (match v with [] => (e x) | _ :: _ => (l x) end) *)
   end.
+
+Check @none.
 
 Ltac refl e :=
   lazymatch type of e with
@@ -229,7 +235,7 @@ Definition reify T (op : Op T)  : RTerm.t gs gs T.
     match goal with
     | [ H : o = ?A |- _ ] => let x := reflop_glob A in idtac x; exact x
     end.
-Qed.
+Defined.
 
 Ltac reflproc p :=
   let t := eval simpl in (greedy_exec Go.sem p) in
@@ -241,4 +247,54 @@ Definition reify_proc T (p : proc T)  : RTerm.t es es {T: Type & T}.
   match goal with
   | [ H : p = ?A |- _ ] => let x := reflproc A in idtac x; exact x
   end.
-Qed.
+Defined.
+
+Ltac refl'_debug RetB RetT e :=
+  match eval simpl in e with
+  | fun x: ?T => @and_then ?A ?B ?C ?T1 ?T2 (@?r1 x) (fun (y: ?T1) => (@?r2 x y)) =>
+    let f1 := refl' B T1 r1 in
+    let f2 := refl' C T2 (fun (p: T * T1) => (r2 (fst p) (snd p))) in
+    constr: (fun x => RTerm.BindES (f1 x) (fun y => f2 (x, y)))
+  | fun x: ?T => @bind_star ?A ?T1 (@?rf x) (@?o x) =>
+    let f := refl' A T1 (fun (p: T * T1) => (rf (fst p) (snd p))) in
+    constr: (fun x => RTerm.BindStarES (fun y => f (x, y)) (o x))
+   | fun x : ?T => (match ?v in (list (sigT (fun ty : Type => Proc.proc Op ty))) return (relation ?A ?B ?T1) with [] => (@?emptycase x) | cons _ _ => (@?listcase x) end) =>
+     let e := refl' B T1 emptycase in
+     let l := refl' B T1 listcase in
+    constr: (match v with [] => (e x) | (cons _ _) => (l x) end)
+  | fun x : ?T => @?E x =>
+    constr: (fun x => RTerm.NotImpl (E x))
+  end.
+Ltac refl_debug e :=
+  lazymatch type of e with
+  | @relation _ ?B ?T =>                        
+    let t := refl'_debug B T constr:(fun _ : unit => e) in
+    let t' := (eval cbn beta in (t tt)) in
+    constr:(t')
+  end.
+
+Ltac reflproc_debug p :=
+  let t := eval simpl in (greedy_exec Go.sem p) in
+  let t' := eval cbv [greedy_exec greedy_exec_partial greedy_exec_pool exec_pool_hd exec_step] in t in
+  refl_debug t'.
+
+Definition reify_proc_debug T (p : proc T)  : RTerm.t es es {T: Type & T}.
+  destruct p eqn:?.
+  Set Printing All.
+  match goal with
+  | [ H : p = ?A |- _ ] => let x := reflproc_debug A in idtac x; exact x
+  end.
+
+Defined.
+
+(RTerm.BindES
+   (RTerm.BindStarES
+      (fun y : list (sigT (fun T : Type => Proc.proc Op T)) =>
+       RTerm.NotImpl
+         match snd (pair tt y) with
+         | nil => none
+         | cons (existT T p) ps' =>
+             and_then
+               ((fix exec_step (T0 : Type) (p0 : Proc.proc Op T0) {struct p0} :
+                   relation Proc.State Proc.State
+                     (prod (Proc.proc Op T0) (thread_pool Op)) :=

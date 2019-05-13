@@ -202,8 +202,3 @@ Definition CreateTable {model:GoModel} (p:string) : proc Table.t :=
   f2 <- FS.open "db" p;
   Ret {| Table.Index := index;
          Table.File := f2; |}.
-     
-Ltac test e :=
-  let t := refl e in
-  let e' := eval cbv [rtermDenote] in (rtermDenote t) in
-  unify e e'.
