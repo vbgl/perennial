@@ -193,12 +193,16 @@ Ltac refl' RetB RetT e :=
   | fun x : ?T => @?E x =>
     constr: (fun x => RTerm.NotImpl (E x))
 
-  (* | fun x : ?T => match ?v with [] => @none ?A ?B ?T1 | ?p :: ?ps => (@?listcase p ps x) end =>
-    let l := refl' B T1 listcase in
-    constr: (match v with [] => (e x) | _ :: _ => (l x) end) *)
-  end.
+  | fun x : ?T => (match ?r with pair s _ => (@?r1 x) end) =>
+    let f := refl' fs _ r1 in
+    (*let f := refl' fs (retT _ (slice.t string)) r1 in*)
+    constr: (fun x => match r with pair s _ => (f x) end)
 
-Check @none.
+  | fun x : ?T => (match ?r with (a, b) => (@?s a b x) end) =>
+    let f := refl' fs unit (fun p => (s (fst p) (fst (snd p)) (snd (snd p)))) in
+    constr: (fun x => match r with (a, b) => (f (a, (b, x))) end)
+   
+   end.
 
 Ltac refl e :=
   lazymatch type of e with
@@ -258,10 +262,8 @@ Ltac refl'_debug RetB RetT e :=
   | fun x: ?T => @bind_star ?A ?T1 (@?rf x) (@?o x) =>
     let f := refl' A T1 (fun (p: T * T1) => (rf (fst p) (snd p))) in
     constr: (fun x => RTerm.BindStarES (fun y => f (x, y)) (o x))
-   | fun x : ?T => (match ?v in (list (sigT (fun ty : Type => Proc.proc Op ty))) return (relation ?A ?B ?T1) with [] => (@?emptycase x) | cons _ _ => (@?listcase x) end) =>
-     let e := refl' B T1 emptycase in
-     let l := refl' B T1 listcase in
-    constr: (match v with [] => (e x) | (cons _ _) => (l x) end)
+   | fun x : ?T => (match (_, ?a).2 with | [] => none | existT _ _ :: _ => (@?r x) end) =>
+    (*constr: (match v with [] => (e x) | (cons _ _) => (l x) end)*)
   | fun x : ?T => @?E x =>
     constr: (fun x => RTerm.NotImpl (E x))
   end.
@@ -280,21 +282,7 @@ Ltac reflproc_debug p :=
 
 Definition reify_proc_debug T (p : proc T)  : RTerm.t es es {T: Type & T}.
   destruct p eqn:?.
-  Set Printing All.
   match goal with
   | [ H : p = ?A |- _ ] => let x := reflproc_debug A in idtac x; exact x
   end.
-
-Defined.
-
-(RTerm.BindES
-   (RTerm.BindStarES
-      (fun y : list (sigT (fun T : Type => Proc.proc Op T)) =>
-       RTerm.NotImpl
-         match snd (pair tt y) with
-         | nil => none
-         | cons (existT T p) ps' =>
-             and_then
-               ((fix exec_step (T0 : Type) (p0 : Proc.proc Op T0) {struct p0} :
-                   relation Proc.State Proc.State
-                     (prod (Proc.proc Op T0) (thread_pool Op)) :=
+  Admitted.
