@@ -188,19 +188,15 @@ Ltac refl' RetB RetT e :=
     let f := refl' A2 T1 r in
     constr: (fun x => RTerm.FstLiftES (f x))
 
+  | fun x : ?T => (match ?r with (a, b) => (@?s a b x) end) =>
+    (* The return type isn't necessarily unit, but Coq doesn't seem to care *)
+    let f := refl' fs unit (fun p => (s (fst p) (fst (snd p)) (snd (snd p)))) in
+    constr: (fun x => match r with (a, b) => (f (a, (b, x))) end)
+
   | fun x : ?T => @error ?A ?B ?T0 =>
     constr: (fun x => RTerm.Error A B T0)
   | fun x : ?T => @?E x =>
     constr: (fun x => RTerm.NotImpl (E x))
-
-  | fun x : ?T => (match ?r with pair s _ => (@?r1 x) end) =>
-    let f := refl' fs _ r1 in
-    (*let f := refl' fs (retT _ (slice.t string)) r1 in*)
-    constr: (fun x => match r with pair s _ => (f x) end)
-
-  | fun x : ?T => (match ?r with (a, b) => (@?s a b x) end) =>
-    let f := refl' fs unit (fun p => (s (fst p) (fst (snd p)) (snd (snd p)))) in
-    constr: (fun x => match r with (a, b) => (f (a, (b, x))) end)
    
    end.
 
