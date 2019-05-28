@@ -260,37 +260,3 @@ Definition reify_proc T (p : proc T)  : RTerm.t es es {T: Type & T}.
   | [ H : p = ?A |- _ ] => let x := reflproc A in idtac x; exact x
   end.
 Defined.
-
-Ltac refl'_debug RetB RetT e :=
-  match eval simpl in e with
-  | fun x: ?T => @and_then ?A ?B ?C ?T1 ?T2 (@?r1 x) (fun (y: ?T1) => (@?r2 x y)) =>
-    let f1 := refl' B T1 r1 in
-    let f2 := refl' C T2 (fun (p: T * T1) => (r2 (fst p) (snd p))) in
-    constr: (fun x => RTerm.BindES (f1 x) (fun y => f2 (x, y)))
-  | fun x: ?T => @bind_star ?A ?T1 (@?rf x) (@?o x) =>
-    let f := refl' A T1 (fun (p: T * T1) => (rf (fst p) (snd p))) in
-    constr: (fun x => RTerm.BindStarES (fun y => f (x, y)) (o x))
-   | fun x : ?T => (match (_, ?a).2 with | [] => none | existT _ _ :: _ => (@?r x) end) =>
-    (*constr: (match v with [] => (e x) | (cons _ _) => (l x) end)*)
-  | fun x : ?T => @?E x =>
-    constr: (fun x => RTerm.NotImpl (E x))
-  end.
-Ltac refl_debug e :=
-  lazymatch type of e with
-  | @relation _ ?B ?T =>                        
-    let t := refl'_debug B T constr:(fun _ : unit => e) in
-    let t' := (eval cbn beta in (t tt)) in
-    constr:(t')
-  end.
-
-Ltac reflproc_debug p :=
-  let t := eval simpl in (greedy_exec Go.sem p) in
-  let t' := eval cbv [greedy_exec greedy_exec_partial greedy_exec_pool exec_pool_hd exec_step] in t in
-  refl_debug t'.
-
-Definition reify_proc_debug T (p : proc T)  : RTerm.t es es {T: Type & T}.
-  destruct p eqn:?.
-  match goal with
-  | [ H : p = ?A |- _ ] => let x := reflproc_debug A in idtac x; exact x
-  end.
-  Admitted.
