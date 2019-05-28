@@ -193,6 +193,10 @@ Ltac refl' RetB RetT e :=
     let f := refl' fs unit (fun p => (s (fst p) (fst (snd p)) (snd (snd p)))) in
     constr: (fun x => match r with (a, b) => (f (a, (b, x))) end)
 
+  | fun x : ?T => (match ?r with (a, b) => (@?s a b x) end) =>
+    let f := refl' gs unit (fun p => (s (fst p) (fst (snd p)) (snd (snd p)))) in
+    constr: (fun x => match r with (a, b) => (f (a, (b, x))) end)
+
   | fun x : ?T => (match ?r with (FinishArgs _) => (@?s1 x) | Begin => (@?s2 x) end) =>
     let f1 := refl' fs unit s1 in
     let f2 := refl' fs unit s2 in
