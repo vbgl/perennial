@@ -130,6 +130,14 @@ Module FS.
     | None => pure tt
     end.
 
+  Definition na_match N A B T (na : NonAtomicArgs N) (rBegin : relation A B unit) (rFinish : N -> relation A B T) : relation A B (retT na T) :=
+    match na return relation _ _ (retT na T) with
+    | Begin =>
+      rBegin
+    | FinishArgs n =>
+      rFinish n
+    end.
+
   Definition step T (op:Op T) : relation State State T :=
     match op in Op T return relation State State T with
     | Open dir name =>
@@ -144,17 +152,12 @@ Module FS.
 
     | List dir na =>
       let! (s, _) <- lookup dirlocks dir;
-           match na return relation _ _ (retT na (slice.t string)) with
-           | Begin =>
-             s' <- unwrap (lock_acquire Reader s);
-               puts (set dirlocks <[dir := (s', tt)]>)
-           | FinishArgs _ =>
-             let! ents <- lookup dirents dir;
+           na_match na (s' <- unwrap (lock_acquire Reader s); puts (set dirlocks <[dir := (s', tt)]>))
+                   (fun _ => let! ents <- lookup dirents dir;
                   s' <- unwrap (lock_release Reader s);
                   _ <- puts (set dirlocks <[dir := (s', tt)]>);
                   l <- such_that (λ _ l, Permutation.Permutation l (map fst (map_to_list ents)));
-                  createSlice l
-                end
+                  createSlice l)
 
     | Size fh =>
       bs <- readFd fh Read;

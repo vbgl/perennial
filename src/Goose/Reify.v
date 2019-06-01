@@ -12,7 +12,7 @@ From Armada Require Import Spec.SemanticsHelpers.
 From Armada Require Import Spec.LockDefs.
 From Armada Require Import Spec.Layer.
 From Armada.Goose Require Import base Machine Filesys Heap GoZeroValues GoLayer Globals.
-From Armada.Goose.Examples Require Import UnitTests.
+(* From Armada.Goose.Examples Require Import UnitTests. *)
 
 Instance goModel : GoModel :=
   { byte := unit;
@@ -72,10 +72,14 @@ Module RTerm.
   | ZoomGB T : t gb gb T -> t gs gs T
   | FstLiftES T : t nat nat T -> t es es T
 
+  | NAMatch N A B T (na: NonAtomicArgs N) : t A B unit -> (N -> t A B T) -> t A B (retT na T)
+
   | Error A B T : t A B T
   | NotImpl A B T (r: relation A B T) : t A B T
   .
 End RTerm.
+
+Check FS.na_match.
 
 Inductive Output B T : Type :=
 | Success (b: B) (t: T) 
@@ -116,6 +120,8 @@ Fixpoint rtermDenote A B T (r: RTerm.t A B T) : relation A B T :=
   | RTerm.ZoomDS r => _zoom FS.heap (rtermDenote r)
   | RTerm.ZoomGB r => _zoom Go.maillocks (rtermDenote r)
   | RTerm.FstLiftES r => fst_lift (rtermDenote r)
+
+  | RTerm.NAMatch na rBegin rFinish => FS.na_match na (rtermDenote rBegin) (fun a => rtermDenote (rFinish a))
 
   | RTerm.Error _ _ _ => error
   | RTerm.NotImpl r => r
@@ -209,12 +215,20 @@ Ltac refl' RetB RetT e :=
     let f2 := refl' _ unit s2 in
     constr: (fun x => match r with (FinishArgs _) => (f1 x) | Begin => (f2 x) end)
 
+  | fun x : ?T => @FS.na_match ?N ?A ?B ?T1 ?na (@?rBegin x) (@?rFinish x) =>
+    let fBegin := refl' B unit rBegin in
+    let fFinish := refl' B T1 (fun (p : (T * N)%type) => (rFinish (fst p) (snd p))) in
+    let nafun := constr: (fun x => RTerm.NAMatch na (fBegin x) (fun a => fFinish (x, a))) in idtac nafun;
+    constr: (fun x => RTerm.NAMatch na (fBegin x) (fun a => fFinish (x, a)))
+
   | fun x : ?T => @error ?A ?B ?T0 =>
     constr: (fun x => RTerm.Error A B T0)
   | fun x : ?T => @?E x =>
     constr: (fun x => RTerm.NotImpl (E x))
-   
    end.
+
+Check @FS.na_match.
+Check RTerm.NAMatch.
 
 Ltac refl e :=
   lazymatch type of e with
@@ -243,7 +257,6 @@ Definition reify T (op : Op T)  : RTerm.t gs gs T.
     match goal with
     | [ H : o = ?A |- _ ] => let x := reflop_fs A in idtac x; exact x
     end.
-  - destruct o eqn:?;
     match goal with
     | [ H : o = ?A |- _ ] => let x := reflop_data A in idtac x; exact x
     end.
@@ -252,6 +265,154 @@ Definition reify T (op : Op T)  : RTerm.t gs gs T.
     | [ H : o = ?A |- _ ] => let x := reflop_glob A in idtac x; exact x
     end.
 Defined.
+
+Definition dir : string.
+Admitted.
+
+Definition na : NonAtomicArgs ().
+Admitted.
+
+Check (fun p : LockStatus * (() * (() * (LockStatus * ()))) => RTerm.NAMatch na
+(RTerm.AndThenFS
+     ((λ p0 : LockStatus * (() * (() * (LockStatus * ()))),
+         RTerm.NotImpl
+           ((λ p1 : LockStatus * (() * (() * (LockStatus * ()))),
+               FS.unwrap
+                 match p1.1 with
+                 | Locked => None
+                 | ReadLocked n => Some (ReadLocked (S n))
+                 | Unlocked => Some (ReadLocked 0)
+                 end) p0)) p)
+     (λ s' : LockStatus,
+        (λ p0 : LockStatus * (() * (() * (LockStatus * ()))) * LockStatus,
+           RTerm.Puts
+             ((λ (p1 : LockStatus * (() * (() * (LockStatus * ()))) * LockStatus) 
+                 (e : fs),
+                 {|
+                 FS.heap := e.(FS.heap);
+                 FS.dirlocks := <[dir:=(p1.2, ())]> e.(FS.dirlocks);
+                 FS.dirents := e.(FS.dirents);
+                 FS.inodes := e.(FS.inodes);
+                 FS.fds := e.(FS.fds) |}) p0)) (p, s')))
+(fun n : () =>
+   RTerm.AndThenFS
+     ((λ p0 : LockStatus * (() * (() * (LockStatus * ()))) * (),
+         RTerm.NotImpl
+           ((λ _ : LockStatus * (() * (() * (LockStatus * ()))) * (),
+               FS.lookup FS.dirents dir) p0)) (p, n))
+     (λ ents : gmap.gmap string FS.Inode,
+        (λ p0 : LockStatus * (() * (() * (LockStatus * ()))) * () *
+                gmap.gmap string FS.Inode,
+           RTerm.AndThenFS
+             ((λ p1 : LockStatus * (() * (() * (LockStatus * ()))) * () *
+                      gmap.gmap string FS.Inode,
+                 RTerm.NotImpl
+                   ((λ p2 : LockStatus * (() * (() * (LockStatus * ()))) * () *
+                            gmap.gmap string FS.Inode,
+                       FS.unwrap
+                         match p2.1.1.1 with
+                         | ReadLocked 0 => Some Unlocked
+                         | ReadLocked (S n) => Some (ReadLocked n)
+                         | _ => None
+                         end) p1)) p0)
+             (λ s' : LockStatus,
+                (λ p1 : LockStatus * (() * (() * (LockStatus * ()))) * () *
+                        gmap.gmap string FS.Inode * LockStatus,
+                   RTerm.AndThenFS
+                     ((λ p2 : LockStatus * (() * (() * (LockStatus * ()))) * () *
+                              gmap.gmap string FS.Inode * LockStatus,
+                         RTerm.Puts
+                           ((λ (p3 : LockStatus * (() * (() * (LockStatus * ()))) *
+                                     () * gmap.gmap string FS.Inode * LockStatus) 
+                               (e : fs),
+                               {|
+                               FS.heap := e.(FS.heap);
+                               FS.dirlocks := <[dir:=(p3.2, ())]> e.(FS.dirlocks);
+                               FS.dirents := e.(FS.dirents);
+                               FS.inodes := e.(FS.inodes);
+                               FS.fds := e.(FS.fds) |}) p2)) p1)
+                     (λ y : (),
+                        (λ p2 : LockStatus * (() * (() * (LockStatus * ()))) * () *
+                                gmap.gmap string FS.Inode * LockStatus * (),
+                           RTerm.AndThenFS
+                             ((λ p3 : LockStatus * (() * (() * (LockStatus * ()))) *
+                                      () * gmap.gmap string FS.Inode * LockStatus *
+                                      (),
+                                 RTerm.NotImpl
+                                   ((λ p4 : LockStatus *
+                                            (() * (() * (LockStatus * ()))) * () *
+                                            gmap.gmap string FS.Inode * LockStatus *
+                                            (),
+                                       such_that
+                                         (λ (_ : fs) (l : list string),
+                                            l
+                                            ≡ₚ map fst
+                                                 (fin_maps.map_to_list p4.1.1.2)))
+                                      p3)) p2)
+                             (λ l : list string,
+                                (λ p3 : LockStatus *
+                                        (() * (() * (LockStatus * ()))) * () *
+                                        gmap.gmap string FS.Inode * LockStatus * () *
+                                        list string,
+                                   RTerm.NotImpl
+                                     ((λ p4 : LockStatus *
+                                              (() * (() * (LockStatus * ()))) * () *
+                                              gmap.gmap string FS.Inode *
+                                              LockStatus * () * 
+                                              list string, 
+                                         FS.createSlice p4.2) p3)) 
+                                  (p2, l))) (p1, y))) (p0, s'))) 
+          ((p,n), ents)))).
+
+Definition s : LockStatus.
+Admitted.
+
+Definition u := ().
+
+Check RTerm.NotImpl
+           (FS.na_match na
+              (and_then
+                 (FS.unwrap
+                    match (s, (u, ((), ()))).1 with
+                    | Locked => None
+                    | ReadLocked n => Some (ReadLocked (S n))
+                    | Unlocked => Some (ReadLocked 0)
+                    end)
+                 (λ s' : LockStatus,
+                    puts
+                      (λ e : fs,
+                         {|
+                         FS.heap := e.(FS.heap);
+                         FS.dirlocks := <[dir:=(s', ())]> e.(FS.dirlocks);
+                         FS.dirents := e.(FS.dirents);
+                         FS.inodes := e.(FS.inodes);
+                         FS.fds := e.(FS.fds) |})))
+              (λ _ : (),
+                 and_then (FS.lookup FS.dirents dir)
+                   (λ ents : gmap.gmap string FS.Inode,
+                      and_then
+                        (FS.unwrap
+                           match (s, (u, ((), ()))).1 with
+                           | ReadLocked 0 => Some Unlocked
+                           | ReadLocked (S n) => Some (ReadLocked n)
+                           | _ => None
+                           end)
+                        (λ s' : LockStatus,
+                           and_then
+                             (puts
+                                (λ e : fs,
+                                   {|
+                                   FS.heap := e.(FS.heap);
+                                   FS.dirlocks := <[dir:=(s', ())]> e.(FS.dirlocks);
+                                   FS.dirents := e.(FS.dirents);
+                                   FS.inodes := e.(FS.inodes);
+                                   FS.fds := e.(FS.fds) |}))
+                             (λ _ : (),
+                                and_then
+                                  (such_that
+                                     (λ (_ : fs) (l : list string),
+                                        l ≡ₚ map fst (fin_maps.map_to_list ents)))
+                                  (λ l : list string, FS.createSlice l)))))).
 
 Ltac reflproc p :=
   let t := eval simpl in (greedy_exec Go.sem p) in
