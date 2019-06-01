@@ -194,6 +194,18 @@ Ltac refl' RetB RetT e :=
     let f := refl' A2 T1 r in
     constr: (fun x => RTerm.FstLiftES (f x))
 
+  | fun x : ?T => (match ?r with (a, b) =>
+                              @FS.na_match ?N fs fs ?T1 ?na (@?rBegin a b x) (@?rFinish a b x)
+                end) =>
+    let fBegin := refl' fs unit (fun p => (rBegin (fst p) (fst (snd p)) (snd (snd p)))) in
+    idtac fBegin;
+    let fFinish := refl' fs T1 (fun (p : (T * (_ * (_ * N)))) => (rFinish (fst p) (fst (snd p)) (fst (snd (snd p))) (snd (snd (snd p))))) in
+                         constr: (fun x => match r with (a, b) =>
+                                                     RTerm.NAMatch na
+                                                                   (fBegin (a, (b, x)))
+                                                                   (fun n => (fFinish (a, (b, (x, n)))))
+                                        end)
+
   | fun x : ?T => (match ?r with (a, b) => (@?s a b x) end) =>
     (* The return type isn't necessarily unit, but Coq doesn't seem to care *)
     let f := refl' fs unit (fun p => (s (fst p) (fst (snd p)) (snd (snd p)))) in
