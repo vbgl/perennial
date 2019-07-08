@@ -2,6 +2,7 @@ From iris.algebra Require Import auth gmap frac agree.
 Require Export CSL.WeakestPre CSL.Lifting CSL.Counting CSL.ThreadReg.
 From iris.algebra Require Export functions csum.
 From iris.base_logic.lib Require Export invariants gen_heap.
+Require Export CSL.StagedInvariant.
 From iris.proofmode Require Export tactics.
 Require Export ExMach.ExMachAPI.
 Set Default Proof Using "Type".
@@ -489,6 +490,56 @@ Section lock.
     eauto.
   Qed.
 End lock.
+
+
+Section staged_lock.
+  Context `{!exmachG Σ, !lockG Σ, !stagedG Σ}.
+
+  Definition is_staged_lock N N' γ i Pweak Pstrong :=
+    (∃ γ', staged_inv N' γ' Pweak ∗ is_lock N γ i (staged_inv_exact N' Pweak Pstrong))%I.
+
+  Global Instance is_staged_lock_persistent N N' γ i Pweak Pstrong:
+    Persistent (is_staged_lock N N' γ i Pweak Pstrong).
+  Proof. apply _. Qed.
+
+  Lemma staged_lock_init N N' i (Pweak Pstrong: iProp Σ) E :
+    i m↦ 0 -∗ Pstrong -∗ □ (Pstrong -∗ Pweak) ={E}=∗ ∃ γ, is_staged_lock N N' γ i Pweak Pstrong.
+  Proof.
+    iIntros "Hi HR Himpl".
+    iMod (staged_inv_alloc N' E Pweak Pstrong with "[$]") as (γ') "(#?&H)".
+    iMod (lock_init N _ _ (staged_inv_exact N' Pweak Pstrong) E with "[$] [H]") as (γ) "H".
+    { iIntros. iExists γ'. by iFrame. }
+    iExists γ. iModIntro. iExists _. by iFrame.
+  Qed.
+
+  Lemma staged_lock_crack N N' i (Pweak Pstrong: iProp Σ) γ E :
+    ↑N' ⊆ E →
+    is_staged_lock N N' γ i Pweak Pstrong ={E, E ∖ ↑N'}=∗ ▷ Pweak.
+  Proof.
+    intros. rewrite /is_staged_lock. iIntros "Hinv".
+    iDestruct "Hinv" as (γ') "(#Hinv&_)".
+    iMod (staged_inv_weak_open with "Hinv"); auto.
+  Qed.
+
+  Lemma wp_staged_lock N N' γ i (Rw R: iProp Σ):
+    {{{ is_staged_lock N N' γ i Rw R }}} lock i {{{ RET tt; locked γ ∗ staged_inv_exact N' Rw R }}}.
+  Proof.
+    iIntros (Φ) "#Hlock HΦ". iDestruct "Hlock" as (?) "(?&Hlock)". iApply wp_lock; first by iFrame.
+    iApply "HΦ".
+  Qed.
+
+  Lemma wp_staged_unlock N N' γ i (Rw R: iProp Σ):
+    {{{ is_staged_lock N N' γ i Rw R ∗ locked γ ∗ staged_inv_exact N' Rw R }}}
+      unlock i
+    {{{ RET tt; True }}}.
+  Proof.
+    iIntros (Φ) "(#Hlock&Hlocked&HR) HΦ".
+    iDestruct "Hlock" as (γ') "(?&Hlock)".
+    iApply (wp_unlock with "[Hlocked HR]"); auto.
+    { iFrame "Hlock". iFrame. }
+  Qed.
+
+End staged_lock.
 
 Ltac wp_write_disk :=
   try wp_bind;
