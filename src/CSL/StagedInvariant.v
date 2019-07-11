@@ -61,6 +61,30 @@ Qed.
 
 Lemma staged_inv_open E N γ P Q:
   ↑N ⊆ E → staged_inv N γ P ∗ staged_value N γ Q
+           ={E,E∖↑N}=∗ ▷ Q ∗ (∀ Q', ▷ Q' ∗ □ (Q' -∗ P) ={E∖↑N,E}=∗ staged_value N γ Q').
+Proof.
+  iIntros (?) "(#Hinv&Hval)".
+  iDestruct "Hval" as (γprop) "(Hγ&#Hsaved)".
+  iInv N as (γprop' Qsaved) "H" "HC".
+  iDestruct "H" as "(>Hγ'&#Hsaved'&HQ0&#Himp)".
+  iDestruct (own_valid_2 with "Hγ' Hγ") as "#H".
+  iDestruct "H" as %[<-%Excl_included%leibniz_equiv _]%auth_both_valid.
+  iSplitL "HQ0".
+  - iModIntro. iNext. iDestruct (saved_prop_agree with "Hsaved Hsaved'") as "Hequiv".
+    admit.
+    (* this is not provable as is -- I think we need two laters on Q as below *)
+  - iModIntro. iIntros (Q'). iIntros "(HQ'&#HQ'impl)".
+    iMod (saved_prop_alloc Q') as (γprop_new) "#Hsaved_new".
+    iMod (own_update_2 _ _ _ (● Excl' γprop_new ⋅ ◯ Excl' γprop_new) with "Hγ' Hγ") as "[Hγ' Hγ]".
+    { by apply auth_update, option_local_update, exclusive_local_update. }
+    iMod ("HC" with "[HQ' Hγ']").
+    * iNext. iExists _, _. iFrame "#". iFrame.
+    * iModIntro. iExists _. by iFrame.
+Admitted.
+
+(*
+Lemma staged_inv_open E N γ P Q:
+  ↑N ⊆ E → staged_inv N γ P ∗ staged_value N γ Q
            ={E,E∖↑N}=∗ ▷ ▷ Q ∗ (∀ Q', ▷ Q' ∗ □ (Q' -∗ P) ={E∖↑N,E}=∗ staged_value N γ Q').
 Proof.
   iIntros (?) "(#Hinv&Hval)".
@@ -80,6 +104,7 @@ Proof.
     * iNext. iExists _, _. iFrame "#". iFrame.
     * iModIntro. iExists _. by iFrame.
 Qed.
+*)
 
 Lemma staged_inv_weak_open E N γ P:
   ↑N ⊆ E → staged_inv N γ P ={E,E∖↑N}=∗ ▷ P.
