@@ -1,6 +1,7 @@
 (* examples on top of concurrency framework *)
 From Armada Require Import Examples.StatDb.Refinement.
 From Armada Require Import Examples.AtomicPair.RefinementShadow.
+From Armada Require Import Examples.AtomicPair.RefinementShadowStaged.
 From Armada Require Import Examples.AtomicPair.RefinementLog.
 From Armada Require Import Examples.Logging.LogRefinement.
 From Armada Require Import Examples.ReplicatedDisk.ReplicatedDiskRefinement.

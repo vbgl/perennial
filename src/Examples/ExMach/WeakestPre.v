@@ -417,17 +417,25 @@ Section lock.
   Global Instance locked_timless γ : Timeless (locked γ).
   Proof. apply _. Qed.
 
-  Lemma lock_init N i v (R: iProp Σ) E : i m↦ v -∗ (⌜ v = 0 ⌝ -∗ R) ={E}=∗ ∃ γ, is_lock N γ i R.
+  Lemma lock_init_strong N i v (R: iProp Σ) E :
+    i m↦ v -∗ (⌜ v = 0 ⌝ ={E}=∗ R) ={E}=∗ ∃ γ, is_lock N γ i R.
   Proof.
     iIntros "Hl HR".
     iMod (own_alloc (Excl ())) as (γ) "Hexcl"; first done.
-    iMod (inv_alloc N _ (lock_inv γ i R) with "[-]").
-    { iNext.
-      destruct (nat_eq_dec v 0).
-      * subst. iLeft; iFrame. iApply "HR"; auto.
-      * iRight. iExists _. iFrame. eauto.
-    }
-    iModIntro; iExists _; done.
+    destruct (nat_eq_dec v 0).
+    * iMod ("HR" with "[//]").
+      iMod (inv_alloc N _ (lock_inv γ i R) with "[-]").
+      ** iNext. subst. iLeft; iFrame.
+      ** eauto.
+    * iMod (inv_alloc N _ (lock_inv γ i R) with "[-]").
+      ** iNext. iRight. iExists _. by iFrame.
+      ** iModIntro; iExists _; done.
+  Qed.
+
+  Lemma lock_init N i v (R: iProp Σ) E : i m↦ v -∗ (⌜ v = 0 ⌝ -∗ R) ={E}=∗ ∃ γ, is_lock N γ i R.
+  Proof.
+    iIntros "? H". iApply (lock_init_strong with "[$] [-]").
+    iIntros. by iApply "H".
   Qed.
 
   Lemma lock_init_unlocked N i (R: iProp Σ) E : i m↦ 0 -∗ R ={E}=∗ ∃ γ, is_lock N γ i R.
@@ -494,49 +502,52 @@ End lock.
 
 Section staged_lock.
   Context `{!exmachG Σ, !lockG Σ, !stagedG Σ}.
+  Context `{Countable A}.
+  Implicit Types Φ: A → iProp Σ.
 
-  Definition is_staged_lock N N' γ i Pweak Pstrong :=
-    (∃ γ', staged_inv N' γ' Pweak ∗ is_lock N γ i (staged_inv_exact N' Pweak Pstrong))%I.
+  Definition is_staged_lock N N' γ i Φ :=
+    (∃ γ', staged_inv N' γ' Φ ∗ is_lock N γ i (∃ x, staged_inv_exact N' Φ x))%I.
 
-  Global Instance is_staged_lock_persistent N N' γ i Pweak Pstrong:
-    Persistent (is_staged_lock N N' γ i Pweak Pstrong).
+  Global Instance is_staged_lock_persistent N N' γ i Φ:
+    Persistent (is_staged_lock N N' γ i Φ).
   Proof. apply _. Qed.
 
-  Lemma staged_lock_init N N' i (Pweak Pstrong: iProp Σ) E :
-    i m↦ 0 -∗ Pstrong -∗ □ (Pstrong -∗ Pweak) ={E}=∗ ∃ γ, is_staged_lock N N' γ i Pweak Pstrong.
+  Lemma staged_lock_init N N' i Φ E x :
+    i m↦ 0 -∗ ▷ Φ x ={E}=∗ ∃ γ, is_staged_lock N N' γ i Φ.
   Proof.
-    iIntros "Hi HR Himpl".
-    iMod (staged_inv_alloc N' E Pweak Pstrong with "[$]") as (γ') "(#?&H)".
-    iMod (lock_init N _ _ (staged_inv_exact N' Pweak Pstrong) E with "[$] [H]") as (γ) "H".
-    { iIntros. iExists γ'. by iFrame. }
+    iIntros "Hi HR".
+    iMod (staged_inv_alloc N' E Φ x with "[$]") as (γ') "(#?&H)".
+    iMod (lock_init N _ _ (∃ x, staged_inv_exact N' Φ x)%I E with "[$] [H]") as (γ) "H".
+    { iIntros. iExists _, γ'. by iFrame. }
     iExists γ. iModIntro. iExists _. by iFrame.
   Qed.
 
-  Lemma staged_lock_crack N N' i (Pweak Pstrong: iProp Σ) γ E :
+  Lemma staged_lock_crack N N' i Φ γ E :
     ↑N' ⊆ E →
-    is_staged_lock N N' γ i Pweak Pstrong ={E, E ∖ ↑N'}=∗ ▷ Pweak.
+    is_staged_lock N N' γ i Φ ={E, E ∖ ↑N'}=∗ ▷ (∃ x, Φ x).
   Proof.
     intros. rewrite /is_staged_lock. iIntros "Hinv".
     iDestruct "Hinv" as (γ') "(#Hinv&_)".
     iMod (staged_inv_weak_open with "Hinv"); auto.
   Qed.
 
-  Lemma wp_staged_lock N N' γ i (Rw R: iProp Σ):
-    {{{ is_staged_lock N N' γ i Rw R }}} lock i {{{ RET tt; locked γ ∗ staged_inv_exact N' Rw R }}}.
+  Lemma wp_staged_lock N N' γ i Φ:
+    {{{ is_staged_lock N N' γ i Φ }}} lock i {{{ x, RET tt; locked γ ∗ staged_inv_exact N' Φ x }}}.
   Proof.
-    iIntros (Φ) "#Hlock HΦ". iDestruct "Hlock" as (?) "(?&Hlock)". iApply wp_lock; first by iFrame.
-    iApply "HΦ".
+    iIntros (Φ') "#Hlock HΦ". iDestruct "Hlock" as (?) "(?&Hlock)". iApply wp_lock; first by iFrame.
+    iNext. iIntros "(?&Hex)". iDestruct "Hex" as (?) "H".
+    iApply "HΦ". iFrame.
   Qed.
 
-  Lemma wp_staged_unlock N N' γ i (Rw R: iProp Σ):
-    {{{ is_staged_lock N N' γ i Rw R ∗ locked γ ∗ staged_inv_exact N' Rw R }}}
+  Lemma wp_staged_unlock N N' γ i Φ x:
+    {{{ is_staged_lock N N' γ i Φ ∗ locked γ ∗ staged_inv_exact N' Φ x }}}
       unlock i
     {{{ RET tt; True }}}.
   Proof.
-    iIntros (Φ) "(#Hlock&Hlocked&HR) HΦ".
+    iIntros (Φ') "(#Hlock&Hlocked&HR) HΦ'".
     iDestruct "Hlock" as (γ') "(?&Hlock)".
     iApply (wp_unlock with "[Hlocked HR]"); auto.
-    { iFrame "Hlock". iFrame. }
+    { iFrame "Hlock". iFrame. iExists _. iFrame. }
   Qed.
 
 End staged_lock.
