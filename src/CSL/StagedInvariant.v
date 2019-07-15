@@ -74,7 +74,7 @@ Proof.
   iNext. iExists x. by iFrame.
 Qed.
 
-Lemma staged_inv_open `{Inhabited A} E N γ Φ x:
+Lemma staged_inv_open' `{Inhabited A} E N γ Φ x:
   ↑N ⊆ E → staged_inv N γ Φ ∗ staged_value N γ x
            ={E,E∖↑N}=∗ ▷ (Φ x) ∗ (∀ x', ▷ Φ x' ={E∖↑N,E}=∗ staged_value N γ x').
 Proof.
@@ -106,6 +106,16 @@ Global Instance into_inv_staged_inv1 N γ Φ : IntoInv (staged_inv N γ Φ) N :=
 Definition staged_inv_exact N Φ (x: A) :=
   (∃ γ, staged_inv N γ Φ ∗ staged_value N γ x)%I.
 
+Lemma staged_inv_open `{Inhabited A} E N Φ x:
+  ↑N ⊆ E → staged_inv_exact N Φ x
+           ={E,E∖↑N}=∗ ▷ (Φ x) ∗ (∀ x', ▷ Φ x' ={E∖↑N,E}=∗ staged_inv_exact N Φ x').
+Proof.
+  iIntros (?) "H". iDestruct "H" as (?) "(#?&?)".
+  iMod (staged_inv_open' with "[$]") as "($&H)"; auto.
+  iModIntro. iIntros (x') "?". iMod ("H" with "[$]").
+  iModIntro. iExists _. by iFrame.
+Qed.
+
 (*
 Global Instance into_acc_inv E N Φ x :
   IntoAcc (staged_inv_exact N Φ x)
@@ -117,10 +127,6 @@ Proof.
   { by iFrame. }
   simpl default.
   { auto.
-
-  i
-
-                                                                 Apply inv_open; done.
 Qed.
 
 Lemma inv_open_timeless E N P `{!Timeless P} :

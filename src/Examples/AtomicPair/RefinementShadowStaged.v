@@ -66,7 +66,6 @@ Section refinement_triples.
     iApply (wp_staged_lock with "Hlockinv").
     iIntros (x) "!> (Hlocked&HEL)".
     wp_bind.
-    iDestruct "HEL" as (?) "(#?&HEL)".
     iMod (staged_inv_open with "[$]") as "(HEL&Hclose)".
     { set_solver+. }
     rewrite /ExecLockInv.
@@ -90,7 +89,7 @@ Section refinement_triples.
 
     iModIntro.
     iApply (wp_staged_unlock with "[Hlockinv HEL Hlocked]").
-    { iFrame "Hlockinv". iFrame. iExists _. iFrame. eauto. }
+    { iFrame "Hlockinv". iFrame. }
     iIntros "!> ?". by iApply "HΦ"; iFrame.
   Qed.
 
@@ -105,7 +104,6 @@ Section refinement_triples.
     iApply (wp_staged_lock with "Hlockinv").
     iIntros (x) "!> (Hlocked&HEL)".
     wp_bind.
-    iDestruct "HEL" as (?) "(#?&HEL)".
     iMod (staged_inv_open with "[$]") as "(HEL&Hclose)".
     { set_solver+. }
     rewrite /ExecLockInv.
@@ -124,7 +122,7 @@ Section refinement_triples.
     iMod("Hclose" with "[$]") as "HEL".
 
     iApply (wp_staged_unlock with "[Hlockinv HEL Hlocked]").
-    { iFrame "Hlockinv". iFrame. iExists _. iFrame. eauto. }
+    { iFrame "Hlockinv". iFrame. }
     iIntros "!> ?".
     iApply fupd_intro_mask; first by set_solver.
     wp_ret. iApply "HΦ"; iFrame.
