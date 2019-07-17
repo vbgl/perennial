@@ -33,7 +33,8 @@ Module FS.
   Inductive Op : Type -> Type :=
   | Open dir p : Op File
   | Close fh : Op unit
-  | List dir (na: NonAtomicArgs unit) : Op (retT na (slice.t string))
+  | ListBegin dir : Op unit
+  | ListFinish dir : Op (slice.t string)
   | Size fh : Op uint64
   | ReadAt fh (off:uint64) (len:uint64) : Op (slice.t byte)
   | Create dir p : Op (File*bool)
@@ -53,10 +54,10 @@ Module FS.
     Definition open dir p : proc _ := Call! Open dir p.
     Definition close fh : proc _ := Call! Close fh.
     Definition list dir : proc (slice.t string) :=
-      Bind (Call (inject (List dir Begin)))
-           (fun _ => Call (inject (List dir (FinishArgs tt)))).
-    Definition list_start dir : proc unit := Call! (List dir Begin).
-    Definition list_finish dir : proc _ := Call! (List dir (FinishArgs tt)).
+      Bind (Call (inject (ListBegin dir)))
+           (fun _ => Call (inject (ListFinish dir ))).
+    Definition list_start dir : proc unit := Call! (ListBegin dir).
+    Definition list_finish dir : proc _ := Call! (ListFinish dir).
     Definition size fh : proc _ := Call! Size fh.
     Definition readAt fh off len : proc _ := Call! ReadAt fh off len.
     Definition create dir p : proc _ := Call! Create dir p.
@@ -130,10 +131,10 @@ Module FS.
     | None => pure tt
     end.
 
-  Definition na_match N A B T (na : NonAtomicArgs N) (rBegin : relation A B unit) (rFinish : N -> relation A B T) : relation A B (retT na T) :=
-    match na return relation _ _ (retT na T) with
+  Definition na_match N A B T (na : NonAtomicArgs N) (rBegin : relation A B T) (rFinish : N -> relation A B T) : relation A B T :=
+    match na with
     | Begin =>
-      rBegin
+      rBegin 
     | FinishArgs n =>
       rFinish n
     end.
@@ -150,14 +151,17 @@ Module FS.
       _ <- lookup fds fh;
       puts (set fds (map_delete fh))
 
-    | List dir na =>
+    | ListBegin dir =>
       let! (s, _) <- lookup dirlocks dir;
-           na_match na (s' <- unwrap (lock_acquire Reader s); puts (set dirlocks <[dir := (s', tt)]>))
-                   (fun _ => let! ents <- lookup dirents dir;
+           s' <- unwrap (lock_acquire Reader s); puts (set dirlocks <[dir := (s', tt)]>)
+
+    | ListFinish dir =>
+      let! (s, _) <- lookup dirlocks dir;
+                  let! ents <- lookup dirents dir;
                   s' <- unwrap (lock_release Reader s);
                   _ <- puts (set dirlocks <[dir := (s', tt)]>);
                   l <- such_that (λ _ l, Permutation.Permutation l (map fst (map_to_list ents)));
-                  createSlice l)
+                  createSlice l
 
     | Size fh =>
       bs <- readFd fh Read;
