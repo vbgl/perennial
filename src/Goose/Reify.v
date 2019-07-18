@@ -45,8 +45,10 @@ Module RTerm.
   Inductive t : Type -> Type -> Type -> Type :=
   (* atomic operations *)
   | Reads T : (ds -> T) -> t ds ds T
+  | ReadsFS T : (fs -> T) -> t fs fs T
   | Puts : (fs -> fs) -> t fs fs unit
   | ReadSome T : (ds -> option T) -> t ds ds T
+  | ReadSomeFS T : (fs -> option T) -> t fs fs T
   | ReadNone T : (ds -> option T) -> t ds ds unit
   | ReadsGB T : (gb -> T) -> t gb gb T
   | ReadSomeGB T : (gb -> option T) -> t gb gb T
@@ -94,6 +96,8 @@ Fixpoint rtermDenote A B T (r: RTerm.t A B T) : relation A B T :=
   match r with
   | RTerm.Reads f => reads f
   | RTerm.ReadSome f => readSome f
+  | RTerm.ReadsFS f => reads f
+  | RTerm.ReadSomeFS f => readSome f
   | RTerm.ReadsGB f => reads f
   | RTerm.ReadSomeGB f => readSome f
   | RTerm.ReadNone f => readNone f
@@ -127,6 +131,10 @@ Ltac refl' RetB RetT e :=
     constr: (fun x => RTerm.Reads (f x))
   | fun x : ?T => @readSome ds ?T0 (@?f x) =>
     constr: (fun x => RTerm.ReadSome (f x))
+  | fun x : ?T => @reads fs ?T0 (@?f x) =>
+    constr: (fun x => RTerm.ReadsFS (f x))
+  | fun x : ?T => @readSome fs ?T0 (@?f x) =>
+    constr: (fun x => RTerm.ReadSomeFS (f x))
   | fun x : ?T => @reads ?s ?T0 (@?f x) =>
     constr: (fun x => RTerm.ReadsGB (f x))
   | fun x : ?T => @readSome ?s ?T0 (@?f x) =>
