@@ -205,6 +205,10 @@ Ltac refl' RetB RetT e :=
     let f := refl' gs unit (fun p => (s (fst p) (fst (snd p)) (snd (snd p)))) in
     constr: (fun x => match r with (a, b) => (f (a, (b, x))) end)
 
+  | fun x : ?T => (match ?r with (a, b) => (@?s a b x) end) =>
+    let f := refl' ds unit (fun p => (s (fst p) (fst (snd p)) (snd (snd p)))) in
+    constr: (fun x => match r with (a, b) => (f (a, (b, x))) end)
+
   | fun x : ?T => @error ?A ?B ?T0 =>
     constr: (fun x => RTerm.Error A B T0)
   | fun x : ?T => @?E x =>
