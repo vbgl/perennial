@@ -146,10 +146,10 @@ Ltac refl' RetB RetT e :=
               
   | fun x: ?T => @Data.allocPtr _ _ (@?ty x) (@?prm x) =>
     constr:(fun x => @RTerm.AllocPtr (ty x) (prm x))
-  | fun x: ?T => @Data.updAllocs _ _ ?ty ?p ?pm =>
-    constr: (fun x => RTerm.UpdAllocs ty p pm)
-  | fun x: ?T => @Data.delAllocs _ _ ?ty ?p =>
-    constr: (fun x => RTerm.DelAllocs ty p)
+  | fun x: ?T => @Data.updAllocs _ _ (@?ty x) (@?p x) (@?pm x) =>
+    constr: (fun x => RTerm.UpdAllocs (ty x) (p x) (pm x))
+  | fun x: ?T => @Data.delAllocs _ _ (@?ty x) (@?p x) =>
+    constr: (fun x => RTerm.DelAllocs (ty x) (p x))
 
   | fun x : ?T => @pure ?A _ (@?E x) =>
     constr: (fun x => RTerm.Ret es (E x))

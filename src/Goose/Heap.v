@@ -30,7 +30,8 @@ Module Data.
   Inductive Op : Type -> Type :=
   | NewAlloc T (v:T) (len:uint64) : Op (ptr T)
   | PtrDeref {T} (p:ptr T) (off:uint64) : Op T
-  | PtrStore T (p:ptr T) (off:uint64) (x:T) na : Op unit
+  | PtrStoreBegin T (p:ptr T) (off:uint64) (x:T) : Op unit
+  | PtrStoreFinish T (p:ptr T) (off:uint64) (x:T) : Op unit
 
   (* slice append is atomic since it is modeled as destroying the input
   allocation (when in reality Go re-uses it if there is capacity and otherwise
@@ -40,7 +41,8 @@ Module Data.
   | SliceAppendSlice T (s:slice.t T) (s':slice.t T) na : Op (retT na (slice.t T))
   *)
   | NewMap V : Op (Map V)
-  | MapAlter `(m:Map V) (off:uint64) (f:option V -> option V) na : Op unit
+  | MapAlterBegin `(m:Map V) (off:uint64) (f:option V -> option V) : Op unit
+  | MapAlterFinish `(m:Map V) (off:uint64) (f:option V -> option V) : Op unit
   | MapLookup `(m:Map V) (k:uint64) : Op (option V)
   | MapStartIter `(m:Map V) : Op (list (uint64*V))
   | MapEndIter `(m:Map V) : Op unit
@@ -50,8 +52,10 @@ Module Data.
   | LockRelease : LockRef -> LockMode -> Op unit
 
   (* expose uint64 little endian encoding/decoding *)
-  | Uint64Get : slice.t byte -> forall na, Op (retT na uint64)
-  | Uint64Put : slice.t byte -> uint64 -> forall na, Op unit
+  | Uint64GetBegin : slice.t byte -> Op unit
+  | Uint64GetFinish : slice.t byte -> Op uint64
+  | Uint64PutBegin : slice.t byte -> uint64 -> Op unit
+  | Uint64PutFinish : slice.t byte -> uint64 -> Op unit
 
   | BytesToString : slice.t byte -> Op string
   | StringToBytes : string -> Op (slice.t byte)
@@ -102,14 +106,14 @@ Module Data.
     Definition sliceRead T (s: slice.t T) off : proc T :=
       ptrDeref s.(slice.ptr) (s.(slice.offset) + off).
 
-    Definition ptrStore T p off x : proc _ :=
+    (* Definition ptrStore T p off x : proc _ :=
       nonAtomicWriteOp (@PtrStore T p off x).
 
     Definition writePtr T (p: ptr T) x :=
       ptrStore p 0 x.
 
     Definition sliceWrite T (s: slice.t T) off (x:T) : proc unit :=
-      ptrStore s.(slice.ptr) (s.(slice.offset) + off) x.
+      ptrStore s.(slice.ptr) (s.(slice.offset) + off) x.*)
 
     Definition sliceAppend T s x : proc _ :=
       Call! @SliceAppend T s x.
@@ -136,8 +140,8 @@ Module Data.
 
     Definition newMap V := Call! NewMap V.
 
-    Definition mapAlter V m (k: uint64) (f: option V -> option V) : proc _ :=
-      nonAtomicWriteOp (@MapAlter V m k f).
+    (*Definition mapAlter V m (k: uint64) (f: option V -> option V) : proc _ :=
+      nonAtomicWriteOp (@MapAlter V m k f). *)
 
     Definition mapLookup {V} m k := Call! @MapLookup V m k.
 
@@ -163,8 +167,10 @@ Module Data.
     Definition lockAcquire l m := Call! LockAcquire l m.
     Definition lockRelease l m := Call! LockRelease l m.
 
-    Definition uint64Get p := nonAtomicOp (Uint64Get p).
-    Definition uint64Put p n := nonAtomicWriteOp (Uint64Put p n).
+    (* Definition uint64GetBegin p := nonAtomicOp (Uint64GetBegin p).
+    Definition uint64GetFinish p := nonAtomicOp (Uint64GetFinish p).
+    Definition uint64PutBegin p n := nonAtomicWriteOp (Uint64PutBegin p n).
+    Definition uint64PutFinish p n := nonAtomicWriteOp (Uint64PutFinish p n). *)
 
     Definition bytesToString bs := Call! BytesToString bs.
     Definition stringToBytes s := Call! StringToBytes s.
@@ -294,15 +300,15 @@ Module Data.
            _ <- readSome (fun _ => lock_available Reader s);
         x <- readSome (fun _ => List.nth_error alloc off);
         pure x
-    | PtrStore p off x ph =>
+    | PtrStoreBegin p off x =>
       let! (s, alloc) <- readSome (getAlloc p);
-      match ph with
-      | Begin => s' <- readSome (fun _ => lock_acquire Writer s);
-                  updAllocs p (s', alloc)
-      | FinishArgs _ => s' <- readSome (fun _ => lock_release Writer s);
-                                alloc' <- readSome (fun _ => list_nth_upd alloc off x);
-                                updAllocs p (s', alloc')
-      end
+           s' <- readSome (fun _ => lock_acquire Writer s);
+           updAllocs p (s', alloc)
+    | PtrStoreFinish p off x =>
+      let! (s, alloc) <- readSome (getAlloc p);
+           s' <- readSome (fun _ => lock_release Writer s);
+           alloc' <- readSome (fun _ => list_nth_upd alloc off x);
+           updAllocs p (s', alloc')
     | SliceAppend p x =>
       let! (s, alloc) <- readSome (getAlloc p.(slice.ptr));
            val <- readSome (fun _ => getSliceModel p alloc);
@@ -320,14 +326,14 @@ Module Data.
       let! (s, m) <- readSome (fun s => getDyn s.(allocs) r);
            _ <- readSome (fun _ => lock_available Reader s);
         pure (m !! k)
-    | MapAlter r k f ph =>
+    | MapAlterBegin r k f =>
       let! (s, m) <- readSome (fun s => getDyn s.(allocs) r);
-      match ph with
-      | Begin => s' <- readSome (fun _ => lock_acquire Writer s);
-                  updAllocs r (s', m)
-      | FinishArgs _ => s' <- readSome (fun _ => lock_release Writer s);
-                              updAllocs r (s', partial_alter f k m)
-      end
+           s' <- readSome (fun _ => lock_acquire Writer s);
+           updAllocs r (s', m)
+    | MapAlterFinish r k f =>
+      let! (s, m) <- readSome (fun s => getDyn s.(allocs) r);
+           s' <- readSome (fun _ => lock_release Writer s);
+           updAllocs r (s', partial_alter f k m)
     | MapStartIter r =>
       let! (s, m) <- readSome (fun s => getDyn s.(allocs) r);
            s' <- readSome (fun _ => lock_acquire Reader s);
@@ -360,28 +366,31 @@ Module Data.
         | Some s' => updAllocs r (s', tt)
         | None => error (* attempt to free the lock incorrectly *)
         end
-    | Uint64Get p ph =>
+    | Uint64GetBegin p =>
       let! (s, alloc) <- readSome (getAlloc p.(slice.ptr));
            val <- readSome (fun _ => getSliceModel p alloc);
-           match ph return relation _ _ (retT ph uint64) with
-           | Begin => s' <- readSome (fun _ => lock_acquire Reader s);
-                       updAllocs p.(slice.ptr) (s', alloc)
-           | FinishArgs _ => s' <- readSome (fun _ => lock_release Reader s);
-                              _ <- updAllocs p.(slice.ptr) (s', alloc);
-                              x <- readSome (fun _ => uint64_from_le (list.take 8 val));
-                              pure x
-           end
-    | Uint64Put p x ph =>
+           s' <- readSome (fun _ => lock_acquire Reader s);
+           updAllocs p.(slice.ptr) (s', alloc)
+    | Uint64GetFinish p =>
+      let! (s, alloc) <- readSome (getAlloc p.(slice.ptr));
+           val <- readSome (fun _ => getSliceModel p alloc);
+           s' <- readSome (fun _ => lock_release Reader s);
+           _ <- updAllocs p.(slice.ptr) (s', alloc);
+           x <- readSome (fun _ => uint64_from_le (list.take 8 val));
+           pure x
+    | Uint64PutBegin p x =>
       let! (s, alloc) <- readSome (getAlloc p.(slice.ptr));
            val <- readSome (fun _ => getSliceModel p alloc);
            if numbers.nat_lt_dec (length val) 8 then error
-           else match ph with
-                | Begin => s' <- readSome (fun _ => lock_acquire Writer s);
-                            updAllocs p.(slice.ptr) (s', alloc)
-                | FinishArgs _ => s' <- readSome (fun _ => lock_release Writer s);
-                                   let enc := uint64_to_le x in
-                                   updAllocs p.(slice.ptr) (s', enc ++ list.drop 8 alloc)
-                end
+           else s' <- readSome (fun _ => lock_acquire Writer s);
+           updAllocs p.(slice.ptr) (s', alloc)
+    | Uint64PutFinish p x =>
+      let! (s, alloc) <- readSome (getAlloc p.(slice.ptr));
+           val <- readSome (fun _ => getSliceModel p alloc);
+           if numbers.nat_lt_dec (length val) 8 then error
+           else s' <- readSome (fun _ => lock_release Writer s);
+           let enc := uint64_to_le x in
+           updAllocs p.(slice.ptr) (s', enc ++ list.drop 8 alloc)
     | BytesToString p =>
       let! (s, alloc) <- readSome (getAlloc p.(slice.ptr));
            val <- readSome (fun _ => getSliceModel p alloc);
