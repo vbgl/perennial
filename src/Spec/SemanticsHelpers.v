@@ -399,7 +399,7 @@ Lemma dynMap_dom_non_spec A (Ref Model: A -> Type)
       (m: DynMap Ref Model) a (x: Ref a):
   getDyn m x = None <-> ¬ existT _ x ∈ dynMap_dom m.
 Proof.
-  rewrite <-dynMap_dom_spec'. destruct getDyn; auto; split; firstorder.
+  rewrite <-dynMap_dom_spec'. destruct getDyn; auto; firstorder auto with congruence.
 Qed.
 
 Lemma dynMap_equiv_perm_dom A (Ref Model: A -> Type)
